@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Notifications - Flask Chat{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-10 offset-md-1">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">Notifications</h4>
+                <div>
+                    <button id="mark-all-read" class="btn btn-outline-primary btn-sm">Mark All as Read</button>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if notifications %}
+                    <div class="list-group notifications-list">
+                        {% for notification in notifications %}
+                            <div class="list-group-item list-group-item-action {% if not notification.read %}list-group-item-{{ notification.type }} fw-bold{% endif %}" data-notification-id="{{ notification.id }}">
+                                <div class="d-flex w-100 justify-content-between">
+                                    <p class="mb-1">{{ notification.content }}</p>
+                                    <small>{{ notification.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
+                                </div>
+                                {% if notification.related_to == 'group' %}
+                                    <a href="{{ url_for('group_chat', group_id=notification.related_id) }}" class="btn btn-sm btn-outline-primary mt-2">Go to Group</a>
+                                {% endif %}
+                                {% if not notification.read %}
+                                    <button class="btn btn-sm btn-outline-secondary mt-2 mark-read">Mark as Read</button>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="alert alert-info">You have no notifications.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Mark individual notifications as read
+    document.querySelectorAll('.mark-read').forEach(button => {
+        button.addEventListener('click', function() {
+            const notificationItem = this.closest('.list-group-item');
+            const notificationId = notificationItem.dataset.notificationId;
+            
+            fetch(`/mark_notification_read/${notificationId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update UI
+                    notificationItem.classList.remove('list-group-item-info', 'list-group-item-success', 'list-group-item-warning', 'list-group-item-danger', 'fw-bold');
+                    this.remove();
+                    
+                    // Update notification count in navbar if it exists
+                    const navCountEl = document.getElementById('notification-count');
+                    if (navCountEl) {
+                        const currentCount = parseInt(navCountEl.textContent);
+                        if (currentCount > 0) {
+                            navCountEl.textContent = currentCount - 1;
+                            if (currentCount - 1 === 0) {
+                                navCountEl.classList.add('d-none');
+                            }
+                        }
+                    }
+                }
+            })
+            .catch(error => console.error('Error marking notification as read:', error));
+        });
+    });
+    
+    // Mark all notifications as read
+    document.getElementById('mark-all-read').addEventListener('click', function() {
+        fetch('/mark_all_notifications_read', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Update UI
+                document.querySelectorAll('.list-group-item').forEach(item => {
+                    item.classList.remove('list-group-item-info', 'list-group-item-success', 'list-group-item-warning', 'list-group-item-danger', 'fw-bold');
+                });
+                document.querySelectorAll('.mark-read').forEach(btn => btn.remove());
+                
+                // Update notification count in navbar if it exists
+                const navCountEl = document.getElementById('notification-count');
+                if (navCountEl) {
+                    navCountEl.textContent = '0';
+                    navCountEl.classList.add('d-none');
+                }
+            }
+        })
+        .catch(error => console.error('Error marking all notifications as read:', error));
+    });
+});
+</script>
+{% endblock %}

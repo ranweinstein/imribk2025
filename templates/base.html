@@ -31,6 +31,42 @@
         .navbar {
             margin-bottom: 20px;
         }
+        
+        /* Notification styles */
+        .notification-badge {
+            position: absolute;
+            top: 0;
+            right: 0;
+            font-size: 0.6rem;
+            padding: 0.2rem 0.45rem;
+            border-radius: 50%;
+            background-color: #dc3545;
+            color: white;
+        }
+        
+        .dropdown-notifications {
+            width: 300px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 0;
+        }
+        
+        .dropdown-notifications .dropdown-item {
+            white-space: normal;
+            padding: 0.5rem 1rem;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .dropdown-notifications .dropdown-item.unread {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+        
+        .notification-time {
+            font-size: 0.75rem;
+            color: #6c757d;
+            margin-top: 0.25rem;
+        }
     </style>
     {% block styles %}{% endblock %}
 </head>
@@ -49,6 +85,21 @@
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('profile') }}">Profile</a>
+                        </li>
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle position-relative" href="#" id="notificationsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                Notifications
+                                <span id="notification-count" class="notification-badge {% if notification_count == 0 %}d-none{% endif %}">{{ notification_count|default(0) }}</span>
+                            </a>
+                            <div class="dropdown-menu dropdown-menu-end dropdown-notifications p-0" aria-labelledby="notificationsDropdown">
+                                <h6 class="dropdown-header">Recent Notifications</h6>
+                                <div id="notifications-container">
+                                    <!-- Notifications will be loaded here via JavaScript -->
+                                    <div class="text-center py-3">Loading notifications...</div>
+                                </div>
+                                <div class="dropdown-divider m-0"></div>
+                                <a class="dropdown-item text-center py-2" href="{{ url_for('view_notifications') }}">See All Notifications</a>
+                            </div>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
@@ -79,6 +130,115 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+    {% if current_user.is_authenticated %}
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Notification dropdown handling
+            const notificationsContainer = document.getElementById('notifications-container');
+            const notificationCount = document.getElementById('notification-count');
+            const notificationsDropdown = document.getElementById('notificationsDropdown');
+            
+            // Load notifications when dropdown is opened
+            notificationsDropdown.addEventListener('show.bs.dropdown', function() {
+                loadNotifications();
+            });
+            
+            // Function to load notifications
+            function loadNotifications() {
+                fetch('/fetch_notifications?limit=5&unread_only=false')
+                    .then(response => response.json())
+                    .then(data => {
+                        // Update notification count
+                        notificationCount.textContent = data.unread_count;
+                        if (data.unread_count > 0) {
+                            notificationCount.classList.remove('d-none');
+                        } else {
+                            notificationCount.classList.add('d-none');
+                        }
+                        
+                        // Display notifications
+                        if (data.notifications.length > 0) {
+                            let html = '';
+                            data.notifications.forEach(notification => {
+                                html += `
+                                <a href="#" class="dropdown-item ${!notification.read ? 'unread' : ''}" 
+                                   data-id="${notification.id}" 
+                                   data-type="${notification.type}"
+                                   data-related-to="${notification.related_to || ''}"
+                                   data-related-id="${notification.related_id || ''}">
+                                    <div>${notification.content}</div>
+                                    <div class="notification-time">${notification.timestamp}</div>
+                                </a>`;
+                            });
+                            notificationsContainer.innerHTML = html;
+                            
+                            // Add click handler to mark as read
+                            document.querySelectorAll('#notifications-container .dropdown-item').forEach(item => {
+                                item.addEventListener('click', function(e) {
+                                    e.preventDefault();
+                                    const notificationId = this.dataset.id;
+                                    const isUnread = this.classList.contains('unread');
+                                    
+                                    // Handle click based on notification type/link
+                                    if (this.dataset.relatedTo === 'group' && this.dataset.relatedId) {
+                                        window.location.href = `/group_chat/${this.dataset.relatedId}`;
+                                    } else {
+                                        window.location.href = '/notifications';
+                                    }
+                                    
+                                    // If unread, mark as read
+                                    if (isUnread) {
+                                        markNotificationAsRead(notificationId);
+                                    }
+                                });
+                            });
+                        } else {
+                            notificationsContainer.innerHTML = '<div class="dropdown-item">No notifications</div>';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error loading notifications:', error);
+                        notificationsContainer.innerHTML = '<div class="dropdown-item text-danger">Error loading notifications</div>';
+                    });
+            }
+            
+            // Function to mark notification as read
+            function markNotificationAsRead(notificationId) {
+                fetch(`/mark_notification_read/${notificationId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Update UI if needed
+                        // This typically happens when redirecting away from the page
+                    }
+                })
+                .catch(error => console.error('Error marking notification as read:', error));
+            }
+            
+            // Check for new notifications periodically (every 30 seconds)
+            setInterval(() => {
+                fetch('/fetch_notifications?unread_only=true&limit=1')
+                    .then(response => response.json())
+                    .then(data => {
+                        // Update notification count
+                        notificationCount.textContent = data.unread_count;
+                        if (data.unread_count > 0) {
+                            notificationCount.classList.remove('d-none');
+                        } else {
+                            notificationCount.classList.add('d-none');
+                        }
+                    })
+                    .catch(error => console.error('Error checking notifications:', error));
+            }, 30000);
+        });
+    </script>
+    {% endif %}
     {% block scripts %}{% endblock %}
 </body>
 </html>

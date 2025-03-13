@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const chatForm = document.getElementById('chat-form');
     const messageInput = document.getElementById('message-input');
     const leaveGroupBtn = document.querySelector('.leave-group-btn');
+    const membersList = document.querySelector('.members-list');
     
     // Store sent message IDs to prevent duplicates
     const sentMessageIds = new Set();
@@ -137,7 +138,6 @@ document.addEventListener('DOMContentLoaded', function() {
     let lastMessageId = 0;
     const chatId = document.getElementById('chat-id')?.value;
     const chatType = document.getElementById('chat-type')?.value;
-    const membersList = document.querySelector('.members-list');
     
     if (chatId && chatType && messageContainer) {
         // Find the last message ID

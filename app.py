@@ -19,6 +19,27 @@ db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 
+class Notification(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    content = db.Column(db.Text, nullable=False)
+    type = db.Column(db.String(20), default='info')  # info, success, warning, danger
+    related_to = db.Column(db.String(20), nullable=True)  # group, user, etc.
+    related_id = db.Column(db.Integer, nullable=True)  # ID of related entity
+    read = db.Column(db.Boolean, default=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'content': self.content,
+            'type': self.type,
+            'related_to': self.related_to,
+            'related_id': self.related_id,
+            'read': self.read,
+            'timestamp': self.timestamp.strftime('%Y-%m-%d %H:%M:%S')
+        }
+
 # Database models
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -66,6 +87,87 @@ class GroupMessage(db.Model):
     group_id = db.Column(db.Integer, db.ForeignKey('group.id'))
     content = db.Column(db.Text, nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+def create_notification(user_id, content, notification_type='info', related_to=None, related_id=None):
+    """Create a notification for a user"""
+    notification = Notification(
+        user_id=user_id,
+        content=content,
+        type=notification_type,
+        related_to=related_to,
+        related_id=related_id
+    )
+    db.session.add(notification)
+    db.session.commit()
+    return notification
+
+def notify_group_member_added(group_id, added_user_id, added_by_id):
+    """Notify all group members when a new member is added"""
+    group = Group.query.get(group_id)
+    added_user = User.query.get(added_user_id)
+    added_by = User.query.get(added_by_id)
+    
+    # Notify the added user
+    content = f"You were added to the group '{group.name}' by {added_by.username}"
+    create_notification(added_user_id, content, 'success', 'group', group_id)
+    
+    # Notify all other group members
+    for member in group.members:
+        if member.id != added_user_id and member.id != added_by_id:
+            content = f"{added_user.username} was added to the group '{group.name}' by {added_by.username}"
+            create_notification(member.id, content, 'info', 'group', group_id)
+
+def notify_group_member_removed(group_id, removed_user_id, removed_by_id=None):
+    """Notify relevant users when a member is removed from a group"""
+    group = Group.query.get(group_id)
+    removed_user = User.query.get(removed_user_id)
+    
+    # If removed by someone else (not self-leave)
+    if removed_by_id and removed_by_id != removed_user_id:
+        removed_by = User.query.get(removed_by_id)
+        
+        # Notify the removed user
+        content = f"You were removed from the group '{group.name}' by {removed_by.username}"
+        create_notification(removed_user_id, content, 'warning', 'group', group_id)
+        
+        # Notify all other group members
+        for member in group.members:
+            if member.id != removed_user_id and member.id != removed_by_id:
+                content = f"{removed_user.username} was removed from the group '{group.name}' by {removed_by.username}"
+                create_notification(member.id, content, 'info', 'group', group_id)
+    
+    # If the user left the group themselves
+    else:
+        # Notify all group members
+        for member in group.members:
+            if member.id != removed_user_id:
+                content = f"{removed_user.username} has left the group '{group.name}'"
+                create_notification(member.id, content, 'info', 'group', group_id)
+
+def get_user_notifications(user_id, limit=10, unread_only=False):
+    """Get the latest notifications for a user"""
+    query = Notification.query.filter_by(user_id=user_id)
+    
+    if unread_only:
+        query = query.filter_by(read=False)
+    
+    return query.order_by(Notification.timestamp.desc()).limit(limit).all()
+
+def mark_notification_as_read(notification_id):
+    """Mark a specific notification as read"""
+    notification = Notification.query.get(notification_id)
+    if notification:
+        notification.read = True
+        db.session.commit()
+        return True
+    return False
+
+def mark_all_notifications_as_read(user_id):
+    """Mark all notifications for a user as read"""
+    Notification.query.filter_by(user_id=user_id, read=False).update({'read': True})
+    db.session.commit()
+
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -365,6 +467,51 @@ def join_group(group_id):
     
     return redirect(url_for('group_chat', group_id=group_id))
 
+
+@app.route('/leave_group/<int:group_id>')
+@login_required
+def leave_group(group_id):
+    # Check if request is AJAX
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    
+    # Get the group
+    group = Group.query.get_or_404(group_id)
+    
+    # Check if the current user is the creator
+    if group.created_by == current_user.id:
+        flash('As the creator, you cannot leave the group. You can remove the group instead.', 'warning')
+        if is_ajax:
+            return jsonify({'success': False, 'message': 'As the creator, you cannot leave the group.'})
+        return redirect(url_for('group_chat', group_id=group_id))
+    
+    # Check if the current user is a member of the group
+    membership = GroupMember.query.filter_by(user_id=current_user.id, group_id=group_id).first()
+    if not membership:
+        flash('You are not a member of this group', 'warning')
+        if is_ajax:
+            return jsonify({'success': False, 'message': 'You are not a member of this group'})
+        return redirect(url_for('dashboard'))
+    
+    # Create notifications before removing the user
+    notify_group_member_removed(group_id, current_user.id)
+    
+    # Remove the user from the group
+    db.session.delete(membership)
+    db.session.commit()
+    
+    flash(f'You have left the group: {group.name}', 'success')
+    
+    # Handle AJAX or regular request differently
+    if is_ajax:
+        return jsonify({
+            'success': True, 
+            'message': f'You have left the group: {group.name}',
+            'redirect_url': url_for('dashboard')
+        })
+    
+    # Redirect to dashboard after leaving
+    return redirect(url_for('dashboard'))
+
 @app.route('/add_member/<int:group_id>', methods=['GET', 'POST'])
 @login_required
 def add_member(group_id):
@@ -402,6 +549,10 @@ def add_member(group_id):
             membership = GroupMember(user_id=user_id, group_id=group_id)
             db.session.add(membership)
             db.session.commit()
+            
+            # Create notifications
+            notify_group_member_added(group_id, user.id, current_user.id)
+            
             flash(f'{user.username} has been added to the group', 'success')
         
         return redirect(url_for('group_chat', group_id=group_id))
@@ -413,6 +564,7 @@ def add_member(group_id):
     non_members = User.query.filter(~User.id.in_([member.id for member in current_members])).all()
     
     return render_template('add_member.html', group=group, non_members=non_members)
+
 
 @app.route('/group_chat/<int:group_id>', methods=['GET', 'POST'])
 @login_required
@@ -490,53 +642,15 @@ def remove_member(group_id, user_id):
         flash(f'{user.username} is not a member of this group', 'warning')
         return redirect(url_for('group_chat', group_id=group_id))
     
+    # Before deleting, create notifications
+    notify_group_member_removed(group_id, user_id, current_user.id)
+    
     # Remove the member
     db.session.delete(membership)
     db.session.commit()
     
     flash(f'{user.username} has been removed from the group', 'success')
     return redirect(url_for('group_chat', group_id=group_id))
-
-@app.route('/leave_group/<int:group_id>')
-@login_required
-def leave_group(group_id):
-    # Check if request is AJAX
-    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
-    
-    # Get the group
-    group = Group.query.get_or_404(group_id)
-    
-    # Check if the current user is the creator
-    if group.created_by == current_user.id:
-        flash('As the creator, you cannot leave the group. You can remove the group instead.', 'warning')
-        if is_ajax:
-            return jsonify({'success': False, 'message': 'As the creator, you cannot leave the group.'})
-        return redirect(url_for('group_chat', group_id=group_id))
-    
-    # Check if the current user is a member of the group
-    membership = GroupMember.query.filter_by(user_id=current_user.id, group_id=group_id).first()
-    if not membership:
-        flash('You are not a member of this group', 'warning')
-        if is_ajax:
-            return jsonify({'success': False, 'message': 'You are not a member of this group'})
-        return redirect(url_for('dashboard'))
-    
-    # Remove the user from the group
-    db.session.delete(membership)
-    db.session.commit()
-    
-    flash(f'You have left the group: {group.name}', 'success')
-    
-    # Handle AJAX or regular request differently
-    if is_ajax:
-        return jsonify({
-            'success': True, 
-            'message': f'You have left the group: {group.name}',
-            'redirect_url': url_for('dashboard')
-        })
-    
-    # Redirect to dashboard after leaving
-    return redirect(url_for('dashboard'))
 
 
 @app.route('/fetch_group_members/<int:group_id>', methods=['GET'])
@@ -566,7 +680,63 @@ def fetch_group_members(group_id):
     
     return jsonify({'members': member_data, 'count': len(member_data)})
 
+@app.context_processor
+def inject_notification_count():
+    """Add notification count to template context for all pages"""
+    if current_user.is_authenticated:
+        notification_count = Notification.query.filter_by(user_id=current_user.id, read=False).count()
+        return {'notification_count': notification_count}
+    return {'notification_count': 0}
+
+
+@app.route('/notifications')
+@login_required
+def view_notifications():
+    """View all notifications for the current user"""
+    notifications = get_user_notifications(current_user.id, limit=50)
+    return render_template('notifications.html', notifications=notifications)
+
+@app.route('/fetch_notifications')
+@login_required
+def fetch_notifications():
+    """API endpoint to fetch user's notifications"""
+    unread_only = request.args.get('unread_only', 'false').lower() == 'true'
+    limit = int(request.args.get('limit', 10))
+    
+    notifications = get_user_notifications(current_user.id, limit=limit, unread_only=unread_only)
+    
+    return jsonify({
+        'notifications': [notif.to_dict() for notif in notifications],
+        'unread_count': Notification.query.filter_by(user_id=current_user.id, read=False).count()
+    })
+
+@app.route('/mark_notification_read/<int:notification_id>', methods=['POST'])
+@login_required
+def mark_read(notification_id):
+    """Mark a specific notification as read"""
+    notification = Notification.query.get_or_404(notification_id)
+    
+    # Check that this notification belongs to the current user
+    if notification.user_id != current_user.id:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    
+    notification.read = True
+    db.session.commit()
+    
+    return jsonify({'success': True})
+
+@app.route('/mark_all_notifications_read', methods=['POST'])
+@login_required
+def mark_all_read():
+    """Mark all of the current user's notifications as read"""
+    Notification.query.filter_by(user_id=current_user.id, read=False).update({'read': True})
+    db.session.commit()
+    
+    return jsonify({'success': True})
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
     app.run(debug=True)
+
+    
