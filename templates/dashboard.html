@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Flask Chat{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h4 class="mb-0">Private Messages</h4>
+            </div>
+            <div class="card-body">
+                <ul class="list-group">
+                    {% for user in users %}
+                        <li class="list-group-item">
+                            <a href="{{ url_for('private_chat', user_id=user.id) }}">{{ user.username }}</a>
+                        </li>
+                    {% else %}
+                        <li class="list-group-item">No users available</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">Groups</h4>
+                <a href="{{ url_for('create_group') }}" class="btn btn-primary btn-sm">Create Group</a>
+            </div>
+            <div class="card-body">
+                <div class="list-group">
+                    {% for group in groups %}
+                        <a href="{{ url_for('group_chat', group_id=group.id) }}" class="list-group-item list-group-item-action">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h5 class="mb-1">{{ group.name }}</h5>
+                                <small>Created: {{ group.created_at.strftime('%Y-%m-%d') }}</small>
+                            </div>
+                            <p class="mb-1">{{ group.description }}</p>
+                        </a>
+                    {% else %}
+                        <div class="list-group-item">No groups available</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

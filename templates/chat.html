@@ -1,0 +1,696 @@
+<!-- templates/chat.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Application</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        /* Additional chat-specific styles */
+        .chat-layout {
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            grid-template-rows: 100vh;
+            overflow: hidden;
+        }
+        
+        .sidebar {
+            background-color: var(--container-bg);
+            border-right: 1px solid var(--message-border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .sidebar-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--message-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .sidebar-content {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 0.5rem;
+        }
+        
+        .sidebar-section {
+            margin-bottom: 1rem;
+        }
+        
+        .sidebar-section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem;
+            font-weight: 600;
+            color: var(--text-color);
+            cursor: pointer;
+        }
+        
+        .sidebar-section-content {
+            margin-top: 0.5rem;
+        }
+        
+        .sidebar-item {
+            padding: 0.75rem 0.5rem;
+            border-radius: 0.25rem;
+            margin-bottom: 0.25rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            color: var(--text-color);
+        }
+        
+        .sidebar-item:hover {
+            background-color: var(--message-bg);
+        }
+        
+        .sidebar-item.active {
+            background-color: var(--message-self-bg);
+            font-weight: 500;
+        }
+        
+        .sidebar-item-icon {
+            margin-right: 0.5rem;
+            font-size: 1.25rem;
+            width: 1.5rem;
+            text-align: center;
+        }
+        
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .chat-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--message-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--container-bg);
+        }
+        
+        .chat-header-info h2 {
+            margin: 0;
+            font-size: 1.25rem;
+        }
+        
+        .chat-header-info p {
+            margin: 0;
+            font-size: 0.875rem;
+            color: var(--system-message-color);
+        }
+        
+        .chat-header-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        #chat-messages {
+            flex-grow: 1;
+            padding: 1rem;
+            overflow-y: auto;
+            background-color: var(--bg-color);
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            visibility: hidden;
+            opacity: 0;
+            transition: visibility 0s linear 0.25s, opacity 0.25s;
+        }
+        
+        .modal-backdrop.active {
+            visibility: visible;
+            opacity: 1;
+            transition-delay: 0s;
+        }
+        
+        .modal {
+            background-color: var(--container-bg);
+            border-radius: 0.5rem;
+            width: 100%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 6px var(--shadow-color);
+        }
+        
+        .modal-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--message-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-header h3 {
+            margin: 0;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: var(--system-message-color);
+        }
+        
+        .modal-body {
+            padding: 1rem;
+        }
+        
+        .modal-footer {
+            padding: 1rem;
+            border-top: 1px solid var(--message-border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.5rem;
+        }
+        
+        .checkbox-list {
+            margin: 1rem 0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem;
+            margin-bottom: 0.25rem;
+            border-radius: 0.25rem;
+        }
+        
+        .checkbox-item:hover {
+            background-color: var(--message-bg);
+        }
+        
+        .checkbox-item input {
+            margin-right: 0.5rem;
+            width: auto;
+        }
+        
+        /* Mobile responsive adjustments */
+        @media (max-width: 768px) {
+            .chat-layout {
+                grid-template-columns: 1fr;
+                grid-template-rows: 1fr;
+            }
+            
+            .sidebar {
+                position: fixed;
+                left: 0;
+                top: 0;
+                width: 80%;
+                height: 100%;
+                z-index: 100;
+                transform: translateX(-100%);
+                transition: transform 0.3s ease;
+            }
+            
+            .sidebar.active {
+                transform: translateX(0);
+            }
+            
+            .mobile-menu-toggle {
+                display: block;
+                background: none;
+                border: none;
+                font-size: 1.5rem;
+                cursor: pointer;
+                color: var(--text-color);
+            }
+            
+            .sidebar-close {
+                display: block;
+                position: absolute;
+                top: 1rem;
+                right: 1rem;
+                background: none;
+                border: none;
+                font-size: 1.5rem;
+                cursor: pointer;
+                color: var(--text-color);
+            }
+        }
+        
+        @media (min-width: 769px) {
+            .mobile-menu-toggle, .sidebar-close {
+                display: none;
+            }
+        }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            border: none;
+        }
+        
+        .btn-primary {
+            background-color: var(--button-bg);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: var(--button-hover);
+        }
+        
+        .btn-secondary {
+            background-color: var(--message-bg);
+            color: var(--text-color);
+        }
+        
+        .btn-secondary:hover {
+            background-color: var(--message-border);
+        }
+        
+        .btn-icon {
+            padding: 0.5rem;
+            border-radius: 50%;
+            font-size: 1.25rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-layout">
+        <!-- Sidebar -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2>Chat App</h2>
+                <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">🌓</button>
+                <button class="sidebar-close" id="sidebar-close">✕</button>
+            </div>
+            
+            <div class="sidebar-content">
+                <div class="sidebar-section">
+                    <div class="sidebar-section-header">
+                        <span>Group Chats</span>
+                        <button class="btn btn-icon btn-secondary" id="create-room-btn" title="Create new room">+</button>
+                    </div>
+                    <div class="sidebar-section-content" id="rooms-list">
+                        <!-- Room list will be populated dynamically -->
+                        {% for room in rooms %}
+                        <div class="sidebar-item" data-room-id="{{ room.id }}" data-room-type="group">
+                            <span class="sidebar-item-icon">#</span>
+                            <span>{{ room.name }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <div class="sidebar-section">
+                    <div class="sidebar-section-header">
+                        <span>Direct Messages</span>
+                    </div>
+                    <div class="sidebar-section-content" id="users-list">
+                        <!-- Users list will be populated dynamically -->
+                        {% for user in users %}
+                        <div class="sidebar-item" data-user-id="{{ user.id }}" data-room-type="private">
+                            <span class="sidebar-item-icon">@</span>
+                            <span>{{ user.username }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main chat area -->
+        <div class="main-content">
+            <div class="chat-header">
+                <div class="chat-header-info">
+                    <button class="mobile-menu-toggle" id="mobile-menu-toggle">☰</button>
+                    <h2 id="current-room-name">Main</h2>
+                    <p id="current-room-info">Public chat room</p>
+                </div>
+                <div class="chat-header-actions">
+                    <a href="{{ url_for('logout') }}" class="btn btn-secondary">Logout</a>
+                </div>
+            </div>
+            
+            <div id="chat-messages">
+                <!-- Messages will be populated dynamically -->
+            </div>
+            
+            <form id="message-form">
+                <input type="text" id="message-input" placeholder="Type a message..." required>
+                <button type="submit">Send</button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Create Room Modal -->
+    <div class="modal-backdrop" id="create-room-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Create New Room</h3>
+                <button class="modal-close" id="close-room-modal">✕</button>
+            </div>
+            <div class="modal-body">
+                <form id="create-room-form">
+                    <div class="form-group">
+                        <label for="room-name">Room Name</label>
+                        <input type="text" id="room-name" required minlength="3" placeholder="Enter room name">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="room-description">Description (optional)</label>
+                        <input type="text" id="room-description" placeholder="Enter room description">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="room-private">
+                            Private Room
+                        </label>
+                        <p class="help-text" style="font-size: 0.8rem; color: var(--system-message-color);">
+                            Private rooms are only visible to invited members.
+                        </p>
+                    </div>
+                    
+                    <div id="members-selection" style="display: none;">
+                        <label>Select Members</label>
+                        <div class="checkbox-list" id="members-list">
+                            <!-- Will be populated with users -->
+                            {% for user in users %}
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="user-{{ user.id }}" value="{{ user.id }}">
+                                <label for="user-{{ user.id }}">{{ user.username }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancel-room-btn">Cancel</button>
+                <button class="btn btn-primary" id="submit-room-btn">Create Room</button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // DOM elements
+            const sidebar = document.getElementById('sidebar');
+            const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+            const sidebarClose = document.getElementById('sidebar-close');
+            const createRoomBtn = document.getElementById('create-room-btn');
+            const createRoomModal = document.getElementById('create-room-modal');
+            const closeRoomModal = document.getElementById('close-room-modal');
+            const cancelRoomBtn = document.getElementById('cancel-room-btn');
+            const submitRoomBtn = document.getElementById('submit-room-btn');
+            const roomPrivateCheckbox = document.getElementById('room-private');
+            const membersSelection = document.getElementById('members-selection');
+            const roomsList = document.getElementById('rooms-list');
+            const usersList = document.getElementById('users-list');
+            const currentRoomName = document.getElementById('current-room-name');
+            const currentRoomInfo = document.getElementById('current-room-info');
+            const chatMessages = document.getElementById('chat-messages');
+            const messageForm = document.getElementById('message-form');
+            const messageInput = document.getElementById('message-input');
+
+            // Current user and room state
+            const username = "{{ username }}";
+            const userId = {{ session['user_id'] }};
+            let currentRoom = "room_1"; // Default to Main room
+            let currentRoomId = 1;
+            let currentRoomType = "group"; // group or private
+            let activeItem = null;
+
+            // Socket.io connection
+            const socket = io();
+
+            // Mobile responsive handlers
+            mobileMenuToggle.addEventListener('click', () => {
+                sidebar.classList.add('active');
+            });
+
+            sidebarClose.addEventListener('click', () => {
+                sidebar.classList.remove('active');
+            });
+
+            // Room creation modal handlers
+            createRoomBtn.addEventListener('click', () => {
+                createRoomModal.classList.add('active');
+            });
+
+            closeRoomModal.addEventListener('click', () => {
+                createRoomModal.classList.remove('active');
+            });
+
+            cancelRoomBtn.addEventListener('click', () => {
+                createRoomModal.classList.remove('active');
+            });
+            
+            // Close modal when clicking outside
+            createRoomModal.addEventListener('click', (e) => {
+                if (e.target === createRoomModal) {
+                    createRoomModal.classList.remove('active');
+                }
+            });
+
+            // Show/hide members selection based on private room setting
+            roomPrivateCheckbox.addEventListener('change', () => {
+                membersSelection.style.display = roomPrivateCheckbox.checked ? 'block' : 'none';
+            });
+
+            // Create room form submission
+            submitRoomBtn.addEventListener('click', () => {
+                const roomName = document.getElementById('room-name').value;
+                const roomDescription = document.getElementById('room-description').value;
+                const isPrivate = roomPrivateCheckbox.checked;
+                
+                // Get selected members if private room
+                let members = [];
+                if (isPrivate) {
+                    const checkboxes = document.querySelectorAll('#members-list input[type="checkbox"]:checked');
+                    members = Array.from(checkboxes).map(checkbox => parseInt(checkbox.value));
+                }
+                
+                // Send API request to create the room
+                fetch('/api/rooms/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name: roomName,
+                        description: roomDescription,
+                        is_private: isPrivate,
+                        members: members
+                    }),
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Add the new room to the rooms list
+                        addRoomToList(data.room);
+                        // Close the modal and reset form
+                        createRoomModal.classList.remove('active');
+                        document.getElementById('create-room-form').reset();
+                        membersSelection.style.display = 'none';
+                    } else {
+                        alert(data.error || 'Failed to create room');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error creating room:', error);
+                    alert('An error occurred while creating the room');
+                });
+            });
+            
+            // Helper function to add a room to the sidebar
+            function addRoomToList(room) {
+                const roomItem = document.createElement('div');
+                roomItem.className = 'sidebar-item';
+                roomItem.dataset.roomId = room.id;
+                roomItem.dataset.roomType = 'group';
+                roomItem.innerHTML = `
+                    <span class="sidebar-item-icon">#</span>
+                    <span>${room.name}</span>
+                `;
+                roomsList.appendChild(roomItem);
+                
+                // Add click handler
+                roomItem.addEventListener('click', handleRoomSelection);
+            }
+            
+            // Room/User selection handlers
+            function handleRoomSelection(e) {
+                const item = e.currentTarget;
+                const roomId = item.dataset.roomId;
+                const roomType = item.dataset.roomType;
+                const roomName = item.querySelector('span:last-child').textContent;
+                
+                // Skip if already active
+                if (activeItem === item) return;
+                
+                // First leave current room if any
+                if (currentRoom) {
+                    socket.emit('leave', { 
+                        room: currentRoomId,
+                        private: currentRoomType === 'private'
+                    });
+                }
+                
+                // Update UI to show active item
+                if (activeItem) {
+                    activeItem.classList.remove('active');
+                }
+                item.classList.add('active');
+                activeItem = item;
+                
+                // Update current room info
+                currentRoomId = roomId;
+                currentRoomType = roomType;
+                
+                if (roomType === 'private') {
+                    currentRoom = roomId; // For private chat, this is the user ID
+                    currentRoomName.textContent = roomName;
+                    currentRoomInfo.textContent = 'Private conversation';
+                } else {
+                    currentRoom = roomId;
+                    currentRoomName.textContent = roomName;
+                    currentRoomInfo.textContent = 'Group chat';
+                }
+                
+                // Clear current messages
+                chatMessages.innerHTML = '';
+                
+                // Join the new room
+                socket.emit('join', { 
+                    room: currentRoomId,
+                    private: currentRoomType === 'private'
+                });
+                
+                // On mobile, close the sidebar after selection
+                if (window.innerWidth <= 768) {
+                    sidebar.classList.remove('active');
+                }
+            }
+            
+            // Add click handlers to all room items
+            document.querySelectorAll('#rooms-list .sidebar-item').forEach(item => {
+                item.addEventListener('click', handleRoomSelection);
+            });
+            
+            // Add click handlers to all user items for private messaging
+            document.querySelectorAll('#users-list .sidebar-item').forEach(item => {
+                item.addEventListener('click', handleRoomSelection);
+            });
+            
+            // Message sending
+            messageForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const message = messageInput.value.trim();
+                
+                if (message && currentRoom) {
+                    socket.emit('send_message', {
+                        message: message,
+                        room: currentRoomId,
+                        private: currentRoomType === 'private'
+                    });
+                    
+                    messageInput.value = '';
+                    messageInput.focus();
+                }
+            });
+            
+            // Socket event handlers
+            socket.on('message', (data) => {
+                addMessageToChat(data.username, data.content, data.timestamp);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            });
+            
+            socket.on('room_history', (data) => {
+                data.messages.forEach(msg => {
+                    addMessageToChat(msg.username, msg.content, msg.timestamp);
+                });
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            });
+            
+            // Helper function to add a message to the chat
+            function addMessageToChat(sender, content, timestamp = null) {
+                const messageDiv = document.createElement('div');
+                messageDiv.classList.add('message');
+                
+                // Determine message type
+                if (sender === 'System') {
+                    messageDiv.classList.add('system-message');
+                    messageDiv.textContent = content;
+                } else {
+                    // Check if message is from the current user
+                    if (sender === username) {
+                        messageDiv.classList.add('message-self');
+                    }
+                    
+                    const messageInfo = document.createElement('div');
+                    messageInfo.classList.add('message-info');
+                    
+                    const senderSpan = document.createElement('span');
+                    senderSpan.classList.add('message-sender');
+                    senderSpan.textContent = sender;
+                    
+                    const timeSpan = document.createElement('span');
+                    timeSpan.classList.add('message-time');
+                    timeSpan.textContent = timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    
+                    messageInfo.appendChild(senderSpan);
+                    messageInfo.appendChild(timeSpan);
+                    
+                    const messageContent = document.createElement('div');
+                    messageContent.classList.add('message-content');
+                    messageContent.textContent = content;
+                    
+                    messageDiv.appendChild(messageInfo);
+                    messageDiv.appendChild(messageContent);
+                }
+                
+                chatMessages.appendChild(messageDiv);
+            }
+            
+            // Join the default room (Main) on initial load
+            const defaultRoom = document.querySelector('#rooms-list .sidebar-item');
+            if (defaultRoom) {
+                defaultRoom.classList.add('active');
+                activeItem = defaultRoom;
+                currentRoomName.textContent = defaultRoom.querySelector('span:last-child').textContent;
+                
+                socket.emit('join', { 
+                    room: currentRoomId,
+                    private: false
+                });
+            }
+        });
+    </script>
+</body>
+</html>

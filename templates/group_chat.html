@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}{{ group.name }} - Flask Chat{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">{{ group.name }}</h4>
+                <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-sm">Back</a>
+            </div>
+            <div class="card-body">
+                <div class="message-container" id="message-container">
+                    {% for message in messages %}
+                        <div class="message {% if message.sender_id == current_user.id %}sent-message{% else %}received-message{% endif %}" data-message-id="{{ message.id }}">
+                            <div>
+                                <strong>{{ message.sender.username if message.sender_id != current_user.id else 'You' }}</strong>
+                            </div>
+                            <div class="message-content">{{ message.content }}</div>
+                            <div class="message-time text-muted small {% if message.sender_id == current_user.id %}text-end{% endif %}">
+                                {{ message.timestamp.strftime('%H:%M | %b %d') }}
+                            </div>
+                        </div>
+                    {% else %}
+                        <div class="text-center text-muted">No messages in this group yet. Be the first to send a message!</div>
+                    {% endfor %}
+                </div>
+                <form method="POST" id="chat-form" action="{{ url_for('group_chat', group_id=group.id) }}">
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="message-input" name="message" placeholder="Type your message..." autocomplete="off" required>
+                        <button type="submit" class="btn btn-primary">Send</button>
+                    </div>
+                    <input type="hidden" id="chat-id" value="{{ group.id }}">
+                    <input type="hidden" id="chat-type" value="group">
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Group Info</h5>
+            </div>
+            <div class="card-body">
+                <p>{{ group.description }}</p>
+                <p class="text-muted small">Created: {{ group.created_at.strftime('%Y-%m-%d') }}</p>
+                <hr>
+                <div class="d-flex justify-content-between align-items-center">
+                    <h6>Members ({{ members|length }})</h6>
+                    {% if current_user in members %}
+                        <a href="{{ url_for('add_member', group_id=group.id) }}" class="btn btn-sm btn-outline-primary">
+                            <small>+ Add Member</small>
+                        </a>
+                    {% endif %}
+                </div>
+                <ul class="list-group list-group-flush">
+                    {% for member in members %}
+                        <li class="list-group-item px-0 py-1">
+                            {{ member.username }}
+                            {% if group.created_by == member.id %}
+                                <span class="badge bg-primary float-end">Creator</span>
+                            {% endif %}
+                        </li>
+                    {% endfor %}
+                </ul>
+                {% if current_user not in members %}
+                    <a href="{{ url_for('join_group', group_id=group.id) }}" class="btn btn-primary btn-sm mt-3 w-100">Join Group</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+{% endblock %}

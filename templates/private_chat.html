@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Chat with {{ user.username }} - Flask Chat{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">Chat with {{ user.username }}</h4>
+                <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-sm">Back</a>
+            </div>
+            <div class="card-body">
+                <div class="message-container" id="message-container">
+                    {% for message in messages %}
+                        <div class="message {% if message.sender_id == current_user.id %}sent-message{% else %}received-message{% endif %}" data-message-id="{{ message.id }}">
+                            <div class="message-content">{{ message.content }}</div>
+                            <div class="message-time text-muted small {% if message.sender_id == current_user.id %}text-end{% endif %}">
+                                {{ message.timestamp.strftime('%H:%M | %b %d') }}
+                            </div>
+                        </div>
+                    {% else %}
+                        <div class="text-center text-muted">No messages yet. Start a conversation!</div>
+                    {% endfor %}
+                </div>
+                <form method="POST" id="chat-form" action="{{ url_for('private_chat', user_id=user.id) }}">
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="message-input" name="message" placeholder="Type your message..." autocomplete="off" required>
+                        <button type="submit" class="btn btn-primary">Send</button>
+                    </div>
+                    <input type="hidden" id="chat-id" value="{{ user.id }}">
+                    <input type="hidden" id="chat-type" value="private">
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+{% endblock %}
