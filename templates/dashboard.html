@@ -31,13 +31,24 @@
             <div class="card-body">
                 <div class="list-group">
                     {% for group in groups %}
-                        <a href="{{ url_for('group_chat', group_id=group.id) }}" class="list-group-item list-group-item-action">
+                        <div class="list-group-item list-group-item-action">
                             <div class="d-flex w-100 justify-content-between">
-                                <h5 class="mb-1">{{ group.name }}</h5>
-                                <small>Created: {{ group.created_at.strftime('%Y-%m-%d') }}</small>
+                                <a href="{{ url_for('group_chat', group_id=group.id) }}" class="text-decoration-none flex-grow-1">
+                                    <h5 class="mb-1">{{ group.name }}</h5>
+                                    <p class="mb-1">{{ group.description }}</p>
+                                    <small>Created: {{ group.created_at.strftime('%Y-%m-%d') }}</small>
+                                </a>
+                                {% if group.created_by == current_user.id %}
+                                    <div class="ms-2">
+                                        <a href="{{ url_for('remove_group', group_id=group.id) }}" 
+                                           class="btn btn-danger btn-sm" 
+                                           onclick="return confirm('Are you sure you want to remove this group? This action cannot be undone.')">
+                                            Remove
+                                        </a>
+                                    </div>
+                                {% endif %}
                             </div>
-                            <p class="mb-1">{{ group.description }}</p>
-                        </a>
+                        </div>
                     {% else %}
                         <div class="list-group-item">No groups available</div>
                     {% endfor %}

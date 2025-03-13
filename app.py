@@ -300,6 +300,31 @@ def private_chat(user_id):
     
     return render_template('private_chat.html', user=user, messages=messages)
 
+
+@app.route('/remove_group/<int:group_id>')
+@login_required
+def remove_group(group_id):
+    group = Group.query.get_or_404(group_id)
+    
+    # Check if current user is the creator of the group
+    if group.created_by != current_user.id:
+        flash('You do not have permission to remove this group', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    # Delete all messages in the group
+    GroupMessage.query.filter_by(group_id=group_id).delete()
+    
+    # Remove all members from the group
+    GroupMember.query.filter_by(group_id=group_id).delete()
+    
+    # Delete the group
+    db.session.delete(group)
+    db.session.commit()
+    
+    flash('Group has been removed successfully', 'success')
+    return redirect(url_for('dashboard'))
+
+
 @app.route('/create_group', methods=['GET', 'POST'])
 @login_required
 def create_group():
