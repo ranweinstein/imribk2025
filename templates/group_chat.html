@@ -56,10 +56,19 @@
                 </div>
                 <ul class="list-group list-group-flush">
                     {% for member in members %}
-                        <li class="list-group-item px-0 py-1">
-                            {{ member.username }}
-                            {% if group.created_by == member.id %}
-                                <span class="badge bg-primary float-end">Creator</span>
+                        <li class="list-group-item px-0 py-2 d-flex justify-content-between align-items-center">
+                            <div>
+                                {{ member.username }}
+                                {% if group.created_by == member.id %}
+                                    <span class="badge bg-primary">Creator</span>
+                                {% endif %}
+                            </div>
+                            {% if is_creator and member.id != current_user.id %}
+                                <a href="{{ url_for('remove_member', group_id=group.id, user_id=member.id) }}" 
+                                   class="btn btn-danger btn-sm" 
+                                   onclick="return confirm('Are you sure you want to remove {{ member.username }} from this group?')">
+                                    Remove
+                                </a>
                             {% endif %}
                         </li>
                     {% endfor %}

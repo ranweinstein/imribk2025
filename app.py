@@ -470,6 +470,33 @@ def group_chat(group_id):
     
     return render_template('group_chat.html', group=group, messages=messages, members=members, is_creator=is_creator)
 
+@app.route('/remove_member/<int:group_id>/<int:user_id>')
+@login_required
+def remove_member(group_id, user_id):
+    # Get the group
+    group = Group.query.get_or_404(group_id)
+    
+    # Check if current user is the creator of the group
+    if group.created_by != current_user.id:
+        flash('You do not have permission to remove members from this group', 'danger')
+        return redirect(url_for('group_chat', group_id=group_id))
+    
+    # Check if the user to be removed exists
+    user = User.query.get_or_404(user_id)
+    
+    # Check if the user to be removed is a member of the group
+    membership = GroupMember.query.filter_by(user_id=user_id, group_id=group_id).first()
+    if not membership:
+        flash(f'{user.username} is not a member of this group', 'warning')
+        return redirect(url_for('group_chat', group_id=group_id))
+    
+    # Remove the member
+    db.session.delete(membership)
+    db.session.commit()
+    
+    flash(f'{user.username} has been removed from the group', 'success')
+    return redirect(url_for('group_chat', group_id=group_id))
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
