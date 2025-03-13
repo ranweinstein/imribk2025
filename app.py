@@ -497,6 +497,75 @@ def remove_member(group_id, user_id):
     flash(f'{user.username} has been removed from the group', 'success')
     return redirect(url_for('group_chat', group_id=group_id))
 
+@app.route('/leave_group/<int:group_id>')
+@login_required
+def leave_group(group_id):
+    # Check if request is AJAX
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    
+    # Get the group
+    group = Group.query.get_or_404(group_id)
+    
+    # Check if the current user is the creator
+    if group.created_by == current_user.id:
+        flash('As the creator, you cannot leave the group. You can remove the group instead.', 'warning')
+        if is_ajax:
+            return jsonify({'success': False, 'message': 'As the creator, you cannot leave the group.'})
+        return redirect(url_for('group_chat', group_id=group_id))
+    
+    # Check if the current user is a member of the group
+    membership = GroupMember.query.filter_by(user_id=current_user.id, group_id=group_id).first()
+    if not membership:
+        flash('You are not a member of this group', 'warning')
+        if is_ajax:
+            return jsonify({'success': False, 'message': 'You are not a member of this group'})
+        return redirect(url_for('dashboard'))
+    
+    # Remove the user from the group
+    db.session.delete(membership)
+    db.session.commit()
+    
+    flash(f'You have left the group: {group.name}', 'success')
+    
+    # Handle AJAX or regular request differently
+    if is_ajax:
+        return jsonify({
+            'success': True, 
+            'message': f'You have left the group: {group.name}',
+            'redirect_url': url_for('dashboard')
+        })
+    
+    # Redirect to dashboard after leaving
+    return redirect(url_for('dashboard'))
+
+
+@app.route('/fetch_group_members/<int:group_id>', methods=['GET'])
+@login_required
+def fetch_group_members(group_id):
+    """Fetch current members of a group"""
+    # Check if the user is a member of the group
+    is_member = GroupMember.query.filter_by(
+        user_id=current_user.id, group_id=group_id
+    ).first() is not None
+    
+    if not is_member:
+        return jsonify({'error': 'Not a member of this group'}), 403
+    
+    # Get all group members
+    members = User.query.join(GroupMember).filter(GroupMember.group_id == group_id).all()
+    
+    # Format member data for the response
+    member_data = [
+        {
+            'id': member.id,
+            'username': member.username,
+            'is_creator': (member.id == Group.query.get(group_id).created_by)
+        }
+        for member in members
+    ]
+    
+    return jsonify({'members': member_data, 'count': len(member_data)})
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
